@@ -1,6 +1,6 @@
 <?php
-function _index() {
-  $data['pagename']='Welcome to KISSMVC';
-  $data['body'][]=View::do_fetch(VIEW_PATH.'main/index.php');
-  View::do_dump(VIEW_PATH.'layouts/mainlayout.php',$data);
+function _index($msg='Hello World!') {
+  $view = new View(APP_PATH.'views/layout.php');
+  $view->set('msg',$msg);
+  $view->dump();
 }

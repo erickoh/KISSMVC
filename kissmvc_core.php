@@ -1,6 +1,6 @@
 <?php
 /*****************************************************************
-Copyright (c) 2008-2009 {kissmvc.php version 0.6}
+Copyright (c) 2008-2009 {kissmvc.php version 0.7}
 Eric Koh <erickoh75@gmail.com> http://kissmvc.com
 
 Permission is hereby granted, free of charge, to any person
@@ -28,24 +28,23 @@ OTHER DEALINGS IN THE SOFTWARE.
 // Controller
 // Parses the HTTP request and routes to the appropriate function
 //===============================================================
-class KISS_Controller {
-	public $controller_path='../app/controllers/'; //with trailing slash
-	public $web_folder='/'; //with trailing slash
-	public $default_controller='main';
-	public $default_function='index';
-	public $request_uri_parts=array();
+abstract class KISS_Controller {
+	protected $controller_path='../app/controllers/'; //with trailing slash
+	protected $web_folder='/'; //with trailing slash
+	protected $request_uri_parts=array();
+	protected $controller;
+	protected $action;
+	protected $params=array();
 
-	function __construct($controller_path,$web_folder,$default_controller,$default_function)  {
+	function __construct($controller_path,$web_folder,$default_controller,$default_action)  {
 		$this->controller_path=$controller_path;
 		$this->web_folder=$web_folder;
-		$this->default_controller=$default_controller;
-		$this->default_function=$default_function;
-		$this->parse_http_request();
-		$this->route_request();
+		$this->controller=$default_controller;
+		$this->action=$default_action;
+		$this->explode_http_request()->parse_http_request()->route_request();
 	}
 
-	//This function parses the HTTP request to set the controller name, function name and parameter parts.
-	function parse_http_request() {
+	function explode_http_request() {
 		$requri = $_SERVER['REQUEST_URI'];
 		if (strpos($requri,$this->web_folder)===0)
 			$requri=substr($requri,strlen($this->web_folder));
@@ -53,39 +52,38 @@ class KISS_Controller {
 		return $this;
 	}
 
-	//This function maps the controller name and function name to the file location of the .php file to include
-	function route_request() {
-		$controller = $this->default_controller;
-		$function = $this->default_function;
-		$params = array();
-
+	//This function parses the HTTP request to get the controller name, action name and parameter array.
+	function parse_http_request() {
+		$this->params = array();
 		$p = $this->request_uri_parts;
 		if (isset($p[0]) && $p[0])
-			$controller=$p[0];
+			$this->controller=$p[0];
 		if (isset($p[1]) && $p[1])
-			$function=$p[1];
+			$this->action=$p[1];
 		if (isset($p[2]))
-			$params=array_slice($p,2);
+			$this->params=array_slice($p,2);
+		return $this;
+	}
 
-		$controllerfile=$this->controller_path.$controller.'/'.$function.'.php';
-		if (!preg_match('#^[A-Za-z0-9_-]+$#',$controller) || !file_exists($controllerfile))
-			$this->request_not_found();
-
-		$function='_'.$function;
+	//This function maps the controller name and action name to the file location of the .php file to include
+	function route_request() {
+		$controllerfile=$this->controller_path.$this->controller.'/'.$this->action.'.php';
+		if (!preg_match('#^[A-Za-z0-9_-]+$#',$this->controller) || !file_exists($controllerfile))
+			$this->request_not_found('Controller file not found: '.$controllerfile);
+		$function='_'.$this->action;
 		if (!preg_match('#^[A-Za-z_][A-Za-z0-9_-]*$#',$function) || function_exists($function))
-			$this->request_not_found();
+			$this->request_not_found('Invalid function name: '.$function);
 		require($controllerfile);
 		if (!function_exists($function))
-			$this->request_not_found();
-
-		call_user_func_array($function,$params);
+			$this->request_not_found('Function not found: '.$function);
+		call_user_func_array($function,$this->params);
 		return $this;
 	}
 
 	//Override this function for your own custom 404 page
-	function request_not_found() {
+	function request_not_found($msg='') {
 		header("HTTP/1.0 404 Not Found");
-		die('<html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.</p><p>Please go <a href="javascript: history.back(1)">back</a> and try again.</p><hr /><p>Powered By: <a href="http://kissmvc.com">KISSMVC</a></p></body></html>');
+		die('<html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>'.$msg.'<p>The requested URL was not found on this server.</p><p>Please go <a href="javascript: history.back(1)">back</a> and try again.</p><hr /><p>Powered By: <a href="http://kissmvc.com">KISSMVC</a></p></body></html>');
 	}
 }
 
@@ -93,21 +91,21 @@ class KISS_Controller {
 // View
 // For plain .php templates
 //===============================================================
-class KISS_View {
-  public $file='';
-  public $vars=array();
+abstract class KISS_View {
+	protected $file='';
+	protected $vars=array();
 
-  function __construct($file='',$vars='')  {
-    if ($file)
-      $this->file = $file;
-    if (is_array($vars))
-      $this->vars=$vars;
-    return $this;
-  }
+	function __construct($file='',$vars='')  {
+		if ($file)
+			$this->file = $file;
+		if (is_array($vars))
+			$this->vars=$vars;
+		return $this;
+	}
 
-  function __set($key,$var) {
-    return $this->set($key,$var);
-  }
+	function __set($key,$var) {
+		return $this->set($key,$var);
+	}
 
 	function set($key,$var) {
 		$this->vars[$key]=$var;
@@ -119,21 +117,21 @@ class KISS_View {
 		$this->vars[$key][]=$var;
 	}
 
-  function fetch($vars='') {
-    if (is_array($vars))
-      $this->vars=array_merge($this->vars,$vars);
-    extract($this->vars);
-    ob_start();
-    require($this->file);
-    return ob_get_clean();
-  }
+	function fetch($vars='') {
+		if (is_array($vars))
+			$this->vars=array_merge($this->vars,$vars);
+		extract($this->vars);
+		ob_start();
+		require($this->file);
+		return ob_get_clean();
+	}
 
-  function dump($vars='') {
-    if (is_array($vars))
-      $this->vars=array_merge($this->vars,$vars);
-    extract($this->vars);
-    require($this->file);
-  }
+	function dump($vars='') {
+		if (is_array($vars))
+			$this->vars=array_merge($this->vars,$vars);
+		extract($this->vars);
+		require($this->file);
+	}
 
 	static function do_fetch($file='',$vars='') {
 		if (is_array($vars))
@@ -180,13 +178,13 @@ function getdbh() {
 }
 */
 //===============================================================
-class KISS_Model  {
+abstract class KISS_Model  {
 
-	public $pkname;
-	public $tablename;
-	public $dbhfnname;
-	public $QUOTE_STYLE='MYSQL'; // valid types are MYSQL,MSSQL,ANSI
-	public $COMPRESS_ARRAY=true;
+	protected $pkname;
+	protected $tablename;
+	protected $dbhfnname;
+	protected $QUOTE_STYLE='MYSQL'; // valid types are MYSQL,MSSQL,ANSI
+	protected $COMPRESS_ARRAY=true;
 	public $rs = array(); // for holding all object property variables
 
 	function __construct($pkname='',$tablename='',$dbhfnname='getdbh',$quote_style='MYSQL',$compress_array=true) {
@@ -304,7 +302,7 @@ class KISS_Model  {
 
 	function merge($arr) {
 		if (!is_array($arr))
-			return false;
+			return $this;
 		foreach ($arr as $key => $val)
 			if (isset($this->rs[$key]))
 				$this->rs[$key] = $val;
